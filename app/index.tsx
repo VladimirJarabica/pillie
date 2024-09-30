@@ -1,8 +1,9 @@
 import { ThemedView } from "@/components/ThemedView";
-import { router, usePathname } from "expo-router";
+import { Link, router, usePathname } from "expo-router";
 import { useState } from "react";
 import {
   Button,
+  Pressable,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -10,17 +11,14 @@ import {
   View,
 } from "react-native";
 import { ThemedText } from "../components/ThemedText";
-import { stringifyPill, usePills, useRefreshPills } from "../utils/pills";
-
-export type Pill = {
-  id: string | "new";
-  name: string;
-  dailyDose: number;
-  amount: number;
-  amountUpdated: Date;
-  notifyDaysBefore: number;
-  notificationId: string;
-};
+import {
+  getRemainingDays,
+  getRemainingDoses,
+  stringifyPill,
+  usePills,
+  useRefreshPills,
+} from "../utils/pills";
+import { DoseInterval } from "../utils/types";
 
 // Color palette: https://coolors.co/palette/0a0908-22333b-eae0d5-c6ac8f-5e503f
 
@@ -48,60 +46,91 @@ export default function HomeScreen() {
           />
         }
       >
-        <Button
-          title="Pridať liek"
-          onPress={() => {
-            router.push({
-              pathname: "/edit-pill",
-              params: { editingPill: null },
-            });
-          }}
-          color="#22333b"
-        />
-        {allPills.map((pill) => (
-          <ThemedView key={pill.id} style={[styles.card, styles.shadowed]}>
-            <ThemedText type="subtitle" style={styles.title}>
-              {pill.name}
-            </ThemedText>
-            <View style={styles.tags}>
-              <ThemedText type="default" style={[styles.tag, styles.shadowed]}>
-                {pill.dailyDose}x denne
-              </ThemedText>
-              <ThemedText type="default" style={styles.tag}>
-                {Math.max(pill.amount, 0)} zvyšných tabliet
-              </ThemedText>
-              {pill.amount === 0 && (
-                <>
-                  <ThemedText type="default" style={styles.tag}>
-                    Liek došiel
-                  </ThemedText>
-                </>
-              )}
-              {pill.amount > 0 && (
-                <ThemedText type="default" style={styles.tag}>
-                  Dojde za {Math.floor(pill.amount / pill.dailyDose)} dni
-                </ThemedText>
-              )}
-              {pill.amount < 0 && (
-                <ThemedText type="default" style={styles.tag}>
-                  Došiel pred{" "}
-                  {Math.abs(Math.floor(pill.amount / pill.dailyDose))} dňami
-                </ThemedText>
-              )}
-            </View>
-            <Button
-              title="Upraviť"
-              color="#22333b"
+        {allPills.map((pill) => {
+          const remainingDoses = Math.floor(getRemainingDoses(pill));
+          const remainingDays = getRemainingDays(pill);
+
+          return (
+            <Pressable
+              key={pill.id}
+              style={({ pressed }) =>
+                pressed ? styles.card : [styles.card, styles.shadowed]
+              }
               onPress={() => {
                 router.push({
-                  pathname: "/edit-pill",
-                  params: { pill: stringifyPill(pill) },
+                  pathname: "/pill",
+                  params: { pill: pill.id },
                 });
               }}
-            />
-          </ThemedView>
-        ))}
+            >
+              <ThemedText type="subtitle" style={styles.title}>
+                {pill.name}
+              </ThemedText>
+              <View style={styles.tags}>
+                <ThemedText
+                  type="default"
+                  style={[styles.tag, styles.shadowed]}
+                >
+                  {pill.dose}x za{" "}
+                  {(() => {
+                    switch (pill.doseInterval) {
+                      case DoseInterval.ONE_DAY:
+                        return "deň";
+                      case DoseInterval.TWO_DAYS:
+                        return "2 dni";
+                      case DoseInterval.THREE_DAYS:
+                        return "3 dni";
+                      case DoseInterval.FOUR_DAYS:
+                        return "4 dni";
+                      case DoseInterval.FIVE_DAYS:
+                        return "5 dní";
+                      case DoseInterval.SIX_DAYS:
+                        return "6 dní";
+                      case DoseInterval.ONE_WEEK:
+                        return "týždeň";
+                      case DoseInterval.TWO_WEEKS:
+                        return "2 týždne";
+                    }
+                  })()}
+                </ThemedText>
+                <ThemedText type="default" style={styles.tag}>
+                  {Math.max(remainingDoses, 0)} tabliet
+                </ThemedText>
+                {remainingDays === 0 && (
+                  <>
+                    <ThemedText type="default" style={styles.tag}>
+                      Liek došiel
+                    </ThemedText>
+                  </>
+                )}
+                {remainingDays > 0 && (
+                  <ThemedText type="default" style={styles.tag}>
+                    Dôjde za {remainingDays} dni
+                  </ThemedText>
+                )}
+                {remainingDays < 0 && (
+                  <ThemedText type="default" style={styles.tag}>
+                    Došiel pred {Math.abs(remainingDays)} dňami
+                  </ThemedText>
+                )}
+              </View>
+            </Pressable>
+          );
+        })}
       </ScrollView>
+      <Pressable
+        style={({ pressed }) =>
+          pressed ? styles.plus : [styles.plus, styles.shadowed]
+        }
+        onPress={() => {
+          router.push({
+            pathname: "/edit-pill",
+            params: { editingPill: null },
+          });
+        }}
+      >
+        <ThemedText style={styles.plusText}>+</ThemedText>
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -116,6 +145,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: -2, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
+    opacity: 0.95,
   },
   card: {
     borderRadius: 10,
@@ -129,7 +159,7 @@ const styles = StyleSheet.create({
     color: "#0a0908",
   },
   tags: {
-    marginTop: 20,
+    marginTop: 0,
     display: "flex",
     flexDirection: "row",
     flexWrap: "wrap",
@@ -140,9 +170,9 @@ const styles = StyleSheet.create({
     display: "flex",
     overflow: "hidden",
     borderRadius: 5,
-    paddingVertical: 3,
+    paddingVertical: 1,
     paddingHorizontal: 5,
-    marginHorizontal: 5,
+    marginHorizontal: 3,
     marginVertical: 3,
   },
   editButton: {
@@ -170,5 +200,25 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     position: "absolute",
+  },
+  plus: {
+    position: "absolute",
+    bottom: 60,
+    width: 60,
+    right: 20,
+    height: 60,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    borderRadius: 25,
+    backgroundColor: "#EAE0D5",
+    borderWidth: 2,
+    borderColor: "#5E503F",
+  },
+  plusText: {
+    color: "#5E503F",
+    lineHeight: 45,
+    fontSize: 40,
   },
 });

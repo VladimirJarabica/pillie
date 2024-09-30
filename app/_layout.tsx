@@ -36,6 +36,7 @@ export default function RootLayout() {
       <PillsProvider>
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="pill" />
           <Stack.Screen name="edit-pill" />
           <Stack.Screen name="+not-found" />
         </Stack>

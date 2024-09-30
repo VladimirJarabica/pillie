@@ -1,60 +1,67 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Pill } from "../app";
-import { ALL_PILLS_KEY, DAY_SECONDS, getPillKey } from "./constants";
 import { createContext, useContext, useEffect, useState } from "react";
+import { ALL_PILLS_KEY, DAY_SECONDS, getPillKey } from "./constants";
+import { DoseInterval, Pill } from "./types";
 
 export const stringifyPill = (pill: Pill) => JSON.stringify(pill);
 
-export const parsePill = (pill: string) => JSON.parse(pill) as Pill;
+export const parsePill = (pill: string) => {
+  try {
+    const parsed = JSON.parse(pill) as Pill;
+    return {
+      ...parsed,
+      dosesUpdated: new Date(parsed.dosesUpdated),
+      doseInterval: Number(parsed.doseInterval) as DoseInterval,
+    };
+  } catch (e) {
+    return null;
+  }
+};
 
 export const getAllPills = async () => {
   const value = await AsyncStorage.getItem(ALL_PILLS_KEY);
   const parsed = JSON.parse(value ?? "[]") as string[];
   const all = await Promise.all(
-    parsed.map(async (id) => {
+    parsed.map<Promise<Pill | null>>(async (id) => {
       const pill = await AsyncStorage.getItem(getPillKey(id));
       if (!pill) {
         return null;
       }
       const parsed = parsePill(pill);
-      if (parsed.dailyDose === null) {
+      if (!parsed) {
         return null;
       }
-      const amountUpdated = new Date(parsed.amountUpdated);
-      const daysPassed = Math.floor(
-        (Date.now() - amountUpdated.getTime()) / (DAY_SECONDS * 1000)
-      );
-      console.log("daysPassed", daysPassed, {
-        now: Date.now(),
-        amountUpdated: amountUpdated.getTime(),
-      });
-      const remainingAmount = Math.floor(
-        parsed.amount - parsed.dailyDose * daysPassed
-      );
-      return {
-        ...parsed,
-        amount: remainingAmount, //Math.max(remainingAmount, 0),
-        amountUpdated,
-      };
+      parsed.dosesUpdated = new Date(parsed.dosesUpdated);
+      return parsed;
     })
   );
 
   return all.filter(Boolean) as Pill[];
 };
 
-// export const useAllPills = () => {
-//   const [allPills, setAllPills] = useState<Pill[]>([]);
+const getPassedDays = (pill: Pill) => {
+  return Math.floor(
+    (Date.now() - pill.dosesUpdated.getTime()) / (DAY_SECONDS * 1000)
+  );
+};
 
-//   const refetchAllPills = async () => {
-//     setAllPills(await getAllPills());
-//   };
+const getDailyDose = (pill: Pill) => pill.dose / pill.doseInterval;
 
-//   useEffect(() => {
-//     refetchAllPills();
-//   }, []);
+export const getRemainingDoses = (pill: Pill) => {
+  const daysPassed = getPassedDays(pill);
+  const dailyDose = getDailyDose(pill);
 
-//   return { allPills, refetch: refetchAllPills };
-// };
+  const consumedDoses = dailyDose * daysPassed;
+
+  return pill.doses - consumedDoses;
+};
+export const getRemainingDays = (pill: Pill) => {
+  const dailyDose = getDailyDose(pill);
+
+  const remainingDoses = getRemainingDoses(pill);
+
+  return Math.ceil(remainingDoses / dailyDose);
+};
 
 type PillsContext = { pills: Pill[]; refresh: () => Promise<void> };
 const pillsContext = createContext<PillsContext>({
